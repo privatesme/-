@@ -1,0 +1,388 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <iostream>
+#include <fstream>
+using namespace std;
+#define ROW 9
+#define COL 9
+#define CORRECT 0
+#define WRONG -1
+#define MAXNUM 1000 /*数独游戏个数*/
+#define N 10
+class dot //坐标数据打包
+{
+public:
+    int x;
+    int y;
+    dot()
+    {
+        x = 0;
+        y = 0;
+    };
+};
+class sudoku
+{
+public:
+    int **map;     //数独问题  0-9  0表示当前位置为空 1-9为对应数字 数独下标从1开始,而非0
+    int **map_may; //数独每个位置的可能性
+    int **cross;   //横向填充 
+    int **length;  //纵向填充
+    int **sub_box; //每个小格代表一个三乘三中格的填充
+    bool flag;     //是否已经求到解的标记
+    sudoku();
+    ~sudoku();
+    int sub_box_discern(int x, int y); //对于每个位置，返回对应的三乘三中格编号
+    bool cross_updata(int n);          //对于n行这个横向填充进行更新
+    bool length_updata(int n);         //对于n行这个纵向填充进行更新
+    bool sub_box_updata(int n);        //对标号为n的三乘三中格的填充更新
+    bool all_sye_updata();             //系统性对所有横纵以及中格的数据进行更新
+    /*并未想到如何检测以上程序是否运行成功,所以返回值都为true*/
+    int *may_arr(int x, int y); //对(x,y)点的可能性进行排查，返回不可能的数组
+    dot *map_may_updata();      //对当前数独的每个点的可能性做标记,并返回可能性最小的点(如果可能性为1则直接结束该函数并返回可能性为1的点坐标)
+    void dfs();                 //对数独进行深搜，求解
+    void coutt();               //对当前的数组打印
+};
+/*
+int main()
+{
+    sudoku a;
+    for (int i = 1; i < N; i++)
+    {
+        for (int j = 1; j < N; j++)
+        {
+            cin >> a.map[i][j];
+        }
+    }
+    a.all_sye_updata();
+    cout << endl;
+    a.dfs();
+    return 0;
+}
+*/
+/*   项目二中的数独样例
+0 0 9 7 0 1 3 2 0
+3 0 4 0 0 2 0 0 0
+8 0 0 0 0 0 0 7 9
+9 4 0 5 0 3 0 0 1
+0 0 0 0 0 0 0 0 0
+1 0 0 8 0 4 0 5 6
+2 3 0 0 0 0 0 0 7
+0 0 0 1 0 0 9 0 2
+0 9 1 4 0 7 8 0 0
+*/
+sudoku::sudoku(void) //可
+{
+    flag = false;
+    map = new int *[N];
+    map_may = new int *[N];
+    cross = new int *[N];
+    length = new int *[N];
+    sub_box = new int *[N];
+    for (int i = 0; i < N; i++)
+    {
+        map[i] = new int[N]();
+        map_may[i] = new int[N]();
+        cross[i] = new int[N]();
+        length[i] = new int[N]();
+        sub_box[i] = new int[N]();
+    }
+}
+sudoku::~sudoku() //不清楚可不可
+{
+    for (int i = 0; i < N; i++)
+    {
+        delete[] map[i];
+        delete[] map_may[i];
+        delete[] cross[i];
+        delete[] length[i];
+        delete[] sub_box[i];
+    }
+    delete[] map;
+    delete[] map_may;
+    delete[] cross;
+    delete[] length;
+    delete[] sub_box;
+}
+int sudoku::sub_box_discern(int x, int y) //可
+{
+    /*对于每一个大数读的小格编号
+    1  2  3
+    4  5  6
+    7  8  9
+    按此方式推算
+*/
+    int retu = 0;
+    retu += (x - 1) / 3 * 3;
+    retu += (y - 1) / 3 + 1;
+    return retu;
+}
+bool sudoku::cross_updata(int n) //可
+{
+    for (int i = 1; i < N; i++)
+    {
+        cross[n][map[n][i]]++;
+    }
+    return true;
+}
+bool sudoku::length_updata(int n) //可
+{
+    for (int i = 1; i < N; i++)
+    {
+        length[n][map[i][n]]++;
+    }
+    return true;
+}
+bool sudoku::sub_box_updata(int n) //可
+{
+    int x = (n - 1) / 3 * 3 + 1;
+    int y = (n - 1) % 3 * 3 + 1;
+    for (int i = x; i < x + 3; i++)
+    {
+        for (int j = y; j < y + 3; j++)
+        {
+            sub_box[n][map[i][j]]++;
+        }
+    }
+    return true;
+}
+bool sudoku::all_sye_updata() //可
+{
+    for (int i = 1; i < N; i++)
+    {
+        cross_updata(i);
+        length_updata(i);
+        sub_box_updata(i);
+    }
+    return true;
+}
+dot *sudoku::map_may_updata() //可
+{
+    int min = 10;
+    dot *ret = new dot();
+    for (int i = 1; i < N; i++)
+    {
+        for (int j = 1; j < N; j++)
+        {
+            if (map[i][j] != 0)
+                continue;
+            int *may = may_arr(i, j);
+            map_may[i][j] = may[0];
+            if (map_may[i][j] < min)
+            {
+                min = map_may[i][j];
+                ret->x = i;
+                ret->y = j;
+            }
+            if (map_may[i][j] == 1)
+            {
+                return ret;
+            }
+            delete[] may;
+        }
+    }
+    if (min == 10)
+    {
+        delete ret;
+        return nullptr;
+    }
+    return ret;
+}
+int *sudoku::may_arr(int x, int y) //可
+{
+    int *arr = new int[10]();
+    for (int k = 1; k < N; k++)
+    {
+        arr[k] += cross[x][k];
+        arr[k] += length[y][k];
+        arr[k] += sub_box[sub_box_discern(x, y)][k];
+    }
+    int may_num = 0;
+    for (int i = 1; i < N; i++)
+    {
+        if (arr[i] == 0)
+        {
+            may_num++;
+        }
+    }
+    arr[0] = may_num;
+    return arr;
+}
+void sudoku::dfs() //可
+{
+	
+    if (flag)
+    {
+        return;
+    }
+    dot *now = map_may_updata();
+    if (now == nullptr)
+    {
+        flag = true;
+        delete now;
+        return;
+    }
+    int *arr = may_arr(now->x, now->y);
+    for (int i = 1; i < N; i++)
+    {
+        if (arr[i] == 0)
+        {
+        	 
+            map[now->x][now->y] = i;
+            cross[now->x][i]++;
+            length[now->y][i]++;
+            sub_box[sub_box_discern(now->x, now->y)][i]++;
+            dfs();
+            if (flag)
+            {
+                delete now;
+                delete[] arr;
+                return;
+            }
+            cross[now->x][i]--;
+            length[now->y][i]--;
+            sub_box[sub_box_discern(now->x, now->y)][i]--;
+            map[now->x][now->y] = 0;
+        }
+    }
+    delete now;
+    delete[] arr;
+    return;
+}
+void sudoku::coutt() //可
+{
+    for (int i = 1; i < N; i++)
+    {
+        for (int j = 1; j < N; j++)
+        {
+            cout << map[i][j] << ' ';
+        }
+        cout << endl;
+    }
+    return;
+}
+int checkSudoku(const char a[][COL])
+{
+    int i, j, x, y;
+    for (i = 0; i < ROW; i++)
+    {
+        for (j = 0; j < COL; j++)
+        {
+            for (x = 0; x < COL; x++)
+                if (a[i][x] == a[i][j] && x != j)
+                    return WRONG;
+
+            for (x = 0; x < ROW; x++)
+                if (a[x][j] == a[i][j] && x != i)
+                    return WRONG;
+
+            for (x = i / 3 * 3; x < i / 3 * 3 + 3; x++)
+                for (y = j / 3 * 3; y < j / 3 * 3 + 3; y++)
+                    if (a[x][y] == a[i][j] && (x != i && y != j))
+                        return WRONG;
+        }
+    }
+    return CORRECT;
+}
+void printSudoku(const char a[][COL])
+{
+    int i, j;
+    printf("\n ┌────┬────┬────┐\n");
+    for (i = 0; i < ROW; i++)
+    {
+        if (i != 0 && i % 3 == 0)
+            printf(" ├────┼────┼────┤\n");
+        printf(" │");
+        for (j = 0; j < COL; j++)
+        {
+            if (j != 0 && j % 3 == 0)
+                printf("  │");
+            if (a[i][j])
+                printf(" %d", a[i][j]);
+            else
+                printf("  ");
+        }
+        printf("  │\n");
+    }
+    printf(" └────┴────┴────┘\n");
+}
+void readFromFile(char a[][COL], const char filename[])
+{
+    // To Be Solved
+    // 从文件filename中读取到的数独初盘存储到数组a[][COL]中
+    ifstream it(filename);
+    for (int i = 0; i < COL; i++)
+    {
+        for (int j = 0; j < COL; j++)
+        {
+            it >> a[i][j];
+        }
+    }
+    for (int i = 0; i < COL; i++)
+    {
+        for (int j = 0; j < COL; j++)
+        {
+            a[i][j]-='0';
+        }
+    }
+    it.close();
+    return;
+}
+void solveSudoku(const char a[][COL], char b[][COL])
+{
+    // To Be Solved
+    // 参数const char a[][COL]表示初盘二维数组；
+    // 参数char b[][COL]表示解的二维数组。
+    sudoku *now=new sudoku();
+    for (int i = 0; i < COL; i++)
+    {
+        for (int j = 0; j < COL; j++)
+        {
+            now->map[i + 1][j + 1] = a[i][j] ;
+        }
+    } 
+    now->all_sye_updata();
+    now->dfs();
+    for (int i = 0; i < COL; i++)
+    {
+        for (int j = 0; j < COL; j++)
+        {
+            b[i][j] = now->map[i + 1][j + 1];
+        }
+    }
+    delete now; 
+    return;
+}
+
+int main()
+{
+    char starting_grid[ROW][COL] = {0};
+    char result[ROW][COL] = {0};
+    char filename[50];
+    int rr;
+    double time_from, time_to, time_sum = 0;
+    int i;
+    for (i = 0; i <MAXNUM; i++)
+    {
+        sprintf(filename, "sudoku\\%04d.txt", i);
+        readFromFile(starting_grid, filename);
+        printf("\n\n             *%4d  *", i);
+        printSudoku(starting_grid);
+        time_from = clock();
+        solveSudoku(starting_grid, result);
+        time_to = clock();
+        time_sum += time_to - time_from;
+        printSudoku(result);
+        rr = checkSudoku(result);
+        if (rr == WRONG)
+        {
+            printf("Something goes wrong...\n");
+            return WRONG;
+        }
+        else
+            printf("            Correct!!!\n");
+        printf("  ==============================");
+    }
+    printf("\n Congretulations! ToTal Time:%fs\n", time_sum / CLOCKS_PER_SEC);
+    return 0;
+}
